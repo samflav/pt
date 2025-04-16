@@ -1,15 +1,21 @@
 import os
 import shutil
 
+from bs4 import BeautifulSoup
+import requests
+
 class Builder:
 
     src = ""
     target = ""
+    base_site = ""
 
     handlers = {}
     replacements = {}
 
-    def __init__(self, wd):
+    def __init__(self, wd, base_site):
+        self.base_site = base_site
+
         self.src = os.path.join(wd, 'src')
         self.target = os.path.join(wd, 'target')
 
@@ -52,16 +58,39 @@ class Builder:
         for file in os.listdir():
             if os.path.isfile(file):
                 with open(file) as f:
-                    self.replacements[file] = f.read()
+                    self.replacements[file] = BeautifulSoup(f.read(), 'html.parser')
 
     def copy_html(self, source, dest):
         with open(source, 'r', encoding='utf-8') as src, open(dest, 'w', encoding='utf-8') as dst:
-            for line in src.readlines():
-                if "class=\"replace\"" in line:
-                    start = line.find('>') + 1
-                    end = line.rfind('<')
+            data = BeautifulSoup(src.read(), 'html.parser')
+            for replacement in data.findAll("meta", class_="replace"):
+                file = replacement["content"]
+                replacement.replace_with(self.get_replacement(file))
 
-                    if start != -1 and end != -1:
-                        dst.write(self.replacements[line[start:end]])
-                else:
-                    dst.write(line)
+            for replacement in data.findAll("div", class_="replace"):
+                file = replacement.string
+                replacement.replace_with(self.get_replacement(file))
+
+            dst.writelines(str(data))
+
+
+    def get_replacement(self, file):
+        if file.startswith("https://"):
+            if file in self.replacements.keys():
+                soup = self.replacements[file]
+            else:
+                soup = BeautifulSoup(requests.get(file).text, 'html.parser')
+                self.replacements[file] = soup
+        else:
+            soup = self.replacements[file]
+
+        self.clean_links(soup)
+        return soup
+
+    def clean_links(self, soup):
+        for link in soup.findAll("a"):
+            if link["href"].startswith(self.base_site):
+                link["href"] = link["href"][len(self.base_site):]
+
+    #TODO(generate cards dynamically)
+    #TODO(generate nav links)

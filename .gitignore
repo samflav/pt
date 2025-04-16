@@ -2,3 +2,4 @@ venv/*
 target/*
 .idea/*
 assets/*
+build/*
